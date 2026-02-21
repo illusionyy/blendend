@@ -6,15 +6,14 @@ defmodule Blendend.Text.Face do
     * load a face from disk,
     * create a `Blendend.Text.Font` from it for actual drawing.
     * inspect its metadata / metrics / coverage.
-  Example:
-
+  Examples:
+      ```elixir
       alias Blendend.Text.{Face, Font}
 
-      face  = Face.load!("priv/fonts/Alegreya-Regular.otf")
-      info  = Face.info!(face)
-      names = Face.names!(face)
-
+      face  = Face.load!("priv/fonts/Alegreya-Regular.otf")  
       font  = Font.create!(face, 48.0)
+
+      ```
   """
 
   alias Blendend.Native
@@ -120,9 +119,9 @@ defmodule Blendend.Text.Face do
 
   Examples: 
 
-    face  = Face.load!("priv/fonts/Alegreya-Regular.otf")
-    Face.feature_tags!(face)
-    ["tnum", "sups", "subs", ...]
+      face  = Face.load!("priv/fonts/Alegreya-Regular.otf")
+      Face.feature_tags!(face)
+      > ["tnum", "sups", "subs", ...]
   """
   @spec feature_tags!(t()) :: list()
   def feature_tags!(face) do

@@ -5,15 +5,17 @@ defmodule Blendend.Canvas.Stroke do
 
   Prefer the `Blendend.Draw` macros; they call into this
   module under the hood.
+      
+  ```elixir 
+  use Blendend.Draw
 
-      use Blendend.Draw
+   draw 240, 160, "stroke_example.png" do
+     clear fill: rgb(250, 250, 250)
 
-      draw 240, 160, "stroke_example.png" do
-        clear fill: rgb(250, 250, 250)
-
-        line 20, 20, 220, 140, stroke: rgb(30, 30, 30), stroke_width: 4
-        circle 120, 80, 40, stroke: rgb(200, 60, 60), stroke_width: 3
-      end
+     line 20, 20, 220, 140, stroke: rgb(30, 30, 30), stroke_width: 4
+     circle 120, 80, 40, stroke: rgb(200, 60, 60), stroke_width: 3
+   end
+   ```
   """
 
   alias Blendend.{Native, Error}
