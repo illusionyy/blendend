@@ -291,7 +291,7 @@ defmodule Blendend.Text.Font do
 
     * `tag` – OpenType feature tag (4 characters), as a string or atom,
       e.g. `"liga"`, `"kern"`, `"dlig"`, `"ss01"`.
-    * `value` – integer in `0..65535`, most commonly `0` (off) or `1` (on).
+    * `value` – `0` (off) or `1` (on).
 
   On success, returns `{:ok, font}`.
 
@@ -308,6 +308,11 @@ defmodule Blendend.Text.Font do
   On success, returns `font`.
 
   On failure, raises `Blendend.Error`.
+
+  ```elixir
+  face = Blendend.Text.Face.load!("priv/fonts/AlegreyaSans-Regular.otf")  
+  font = Blendend.Text.Font.create_with_features!(face, 482.0, [{"subs", 1}])
+  ```
   """
   @spec create_with_features!(Blendend.Text.Face.t(), number(), [feature_setting()]) :: t()
   def create_with_features!(face, size, feats) do
