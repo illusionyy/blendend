@@ -4,6 +4,13 @@
 #include <cstring>
 #include <vector>
 
+#define __my_countof(_Array) (sizeof(_Array) / sizeof(_Array[0]))
+#if defined(_countof)
+#undef _countof
+#endif
+// Just making sure
+#define _countof __my_countof
+
 namespace
 {
 struct BoxSizes
@@ -12,7 +19,7 @@ struct BoxSizes
     int sizes[3];
 };
 
-inline BoxSizes gaussian_to_box_sizes(double sigma)
+static inline BoxSizes gaussian_to_box_sizes(double sigma)
 {
     const double n = 3.0;
     double wIdeal = std::sqrt((12.0 * sigma * sigma / n) + 1.0);
@@ -35,7 +42,7 @@ inline BoxSizes gaussian_to_box_sizes(double sigma)
     return bs;
 }
 
-inline int clamp_int(int v, int lo, int hi)
+static inline int clamp_int(int v, int lo, int hi)
 {
     if (v < lo)
     {
@@ -70,9 +77,9 @@ struct BlurScratch
     std::vector<uint8_t> buf_b;
 };
 
-thread_local BlurScratch blur_scratch;
+static thread_local BlurScratch blur_scratch;
 
-void box_blur_h(const ImgView& src, const ImgView& dst, int radius)
+static void box_blur_h(const ImgView& src, const ImgView& dst, int radius)
 {
     const int dia = radius * 2 + 1;
     for (int y = 0; y < src.h; ++y)
@@ -116,7 +123,7 @@ void box_blur_h(const ImgView& src, const ImgView& dst, int radius)
     }
 }
 
-void box_blur_v(const ImgView& src, const ImgView& dst, int radius)
+static void box_blur_v(const ImgView& src, const ImgView& dst, int radius)
 {
     const int dia = radius * 2 + 1;
     for (int x = 0; x < src.w; ++x)
@@ -160,7 +167,7 @@ void box_blur_v(const ImgView& src, const ImgView& dst, int radius)
 }
 }  // namespace
 
-BLResult blur_image_inplace(BLImage& img, double sigma, int width, int height)
+BLResult blur_image_inplace(BLImage& img, const double sigma, const BLRectI& rect)
 {
     // Approximates a Gaussian blur by applying three box blurs horizontally/vertically.
     if (sigma <= 0.0)
@@ -195,11 +202,20 @@ BLResult blur_image_inplace(BLImage& img, double sigma, int width, int height)
         return r;
     }
 
-    // Limit the blur to an optional sub-rectangle; default is the whole image.
-    const int eff_w = (width > 0 && width <= sz.w) ? width : sz.w;
-    const int eff_h = (height > 0 && height <= sz.h) ? height : sz.h;
+    // Clamp the requested rect to the image bounds.
+    const int rx = clamp_int(rect.x, 0, sz.w);
+    const int ry = clamp_int(rect.y, 0, sz.h);
+    const int rx2 = clamp_int(rect.x + rect.w, 0, sz.w);
+    const int ry2 = clamp_int(rect.y + rect.h, 0, sz.h);
+    const int eff_w = rx2 - rx;
+    const int eff_h = ry2 - ry;
 
-    // Compute the bytes per tight row and total buffer size for that sub-region.
+    if (eff_w <= 0 || eff_h <= 0)
+    {
+        return BL_SUCCESS;
+    }
+
+    // Compute the bytes per tight row and total buffer size for the sub-region.
     const size_t row_bytes = static_cast<size_t>(eff_w) * static_cast<size_t>(channels);
     const size_t buf_bytes = row_bytes * static_cast<size_t>(eff_h);
 
@@ -215,49 +231,35 @@ BLResult blur_image_inplace(BLImage& img, double sigma, int width, int height)
 
     uint8_t* src_data = static_cast<uint8_t*>(data.pixel_data);
 
-    // If the image is already tightly packed, work in-place in buf_a with a single copy.
-    // Otherwise, copy each row to strip out stride padding before blurring.
+    // Pointer to the first pixel of the rect in the original image data.
+    uint8_t* rect_origin = src_data + static_cast<size_t>(ry) * data.stride + static_cast<size_t>(rx) * static_cast<size_t>(channels);
+
+    // Copy the rect rows into a tightly-packed working buffer.
     uint8_t* packed_src = scratch.buf_a.data();
-    if (static_cast<int>(row_bytes) == data.stride)
+    for (int y = 0; y < eff_h; ++y)
     {
-        std::memcpy(packed_src, src_data, buf_bytes);
-    }
-    else
-    {
-        for (int y = 0; y < eff_h; ++y)
-        {
-            std::memcpy(packed_src + static_cast<size_t>(y) * row_bytes,
-                        src_data + static_cast<size_t>(y) * data.stride,
-                        row_bytes);
-        }
+        std::memcpy(packed_src + static_cast<size_t>(y) * row_bytes,
+                    rect_origin + static_cast<size_t>(y) * data.stride,
+                    row_bytes);
     }
 
     ImgView src{packed_src, eff_w, eff_h, static_cast<int>(row_bytes), channels};
     ImgView dst{scratch.buf_b.data(), eff_w, eff_h, static_cast<int>(row_bytes), channels};
 
     BoxSizes boxes = gaussian_to_box_sizes(sigma);
-    for (int bi = 0; bi < 3; ++bi)
+    for (size_t bi = 0; bi < _countof(boxes.sizes); ++bi)
     {
         int radius = boxes.sizes[bi] / 2;
         box_blur_h(src, dst, radius);
         box_blur_v(dst, src, radius);
     }
 
-    // When data.stride (bytes from one row to the next) exactly equals row_bytes
-    // the image is tightly packed and can be copied in one chunk;
-    // otherwise each row has extra padding, so it’s copied row-by-row.
-    if (static_cast<int>(row_bytes) == data.stride)
+    // Write the blurred rect rows back into the image at the correct offset.
+    for (int y = 0; y < eff_h; ++y)
     {
-        std::memcpy(src_data, packed_src, buf_bytes);
-    }
-    else
-    {
-        for (int y = 0; y < eff_h; ++y)
-        {
-            std::memcpy(src_data + static_cast<size_t>(y) * data.stride,
-                        packed_src + static_cast<size_t>(y) * row_bytes,
-                        row_bytes);
-        }
+        std::memcpy(rect_origin + static_cast<size_t>(y) * data.stride,
+                    packed_src + static_cast<size_t>(y) * row_bytes,
+                    row_bytes);
     }
 
     return BL_SUCCESS;
